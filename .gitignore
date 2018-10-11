@@ -3,6 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+
+# Custom
+russian-troll-tweets/*
+
+
+
+
 # C extensions
 *.so
 
