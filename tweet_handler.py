@@ -4,6 +4,13 @@ import torch
 from sklearn.model_selection import train_test_split
 
 
+
+'''
+May want to implement this:
+https://stackoverflow.com/questions/11331982/how-to-remove-any-url-within-a-string-in-python
+to remove urls.
+'''
+
 def rand_line_start(string, length, pad_char='@'):
     start = np.random.randint(len(string))
     temp = string[start: start + length]
@@ -12,15 +19,16 @@ def rand_line_start(string, length, pad_char='@'):
 
 
 class TweetHandler(object):
-    def __init__(self, file_list, pad_char='@'):
+    def __init__(self, file_list, vocab_file, pad_char='\xe6',
+                 sos_char='\xf7', eos_char='\xf5'):
         self.pad_char = pad_char
         self.file_list = file_list
+        self.vocab_file = vocab_file
         self.__join_data_inputs()
         self.__build_vocabulary()
 
     def __build_vocabulary(self):
-        all_str = self.data.content.str.lower().values
-        self.vocab = list(set(''.join(all_str)))
+        self.vocab = open(self.vocab_file, 'r').read().splitlines()
         self.vocab_string = ''.join(self.vocab)
         self.n_letters = len(self.vocab)
         print('There are {} letters in the vocabulary'.format(self.n_letters))
@@ -48,7 +56,7 @@ class TweetHandler(object):
         just_str = sub.content.apply(rand_line_start,
                                       args=(length, self.pad_char, )).values.tolist()
 
-        # One hot encode the strings. 
+        # One hot encode the strings.
         out = torch.stack([self.line_to_tensor(s) for s in just_str]).squeeze(2)
         print(out.size())
 
