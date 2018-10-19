@@ -11,24 +11,35 @@ https://stackoverflow.com/questions/11331982/how-to-remove-any-url-within-a-stri
 to remove urls.
 '''
 
-def rand_line_start(string, length, pad_char='@'):
+def rand_line_start(string, length, pad_char):
     start = np.random.randint(len(string))
     temp = string[start: start + length]
     temp += pad_char * (length - len(temp))
     return temp
 
+def prefix_suffix_line_with_chars(string, prefix_char, suffix_char):
+    string = prefix_char + string + suffix_char
+    return string
 
 class TweetHandler(object):
     def __init__(self, file_list, vocab_file, pad_char='\xe6',
                  sos_char='\xf7', eos_char='\xf5'):
         self.pad_char = pad_char
+        self.sos_char = sos_char
+        self.eos_char = eos_char
         self.file_list = file_list
         self.vocab_file = vocab_file
         self.__join_data_inputs()
+        # self.__add_special_chars_to_data()
         self.__build_vocabulary()
 
+
     def __build_vocabulary(self):
+        '''
+        Open the vocabulary file and set the pertinent fields.
+        '''
         self.vocab = open(self.vocab_file, 'r').read().splitlines()
+        self.vocab += [self.pad_char, self.sos_char, self.eos_char]
         self.vocab_string = ''.join(self.vocab)
         self.n_letters = len(self.vocab)
         print('There are {} letters in the vocabulary'.format(self.n_letters))
@@ -40,6 +51,16 @@ class TweetHandler(object):
                 self.data = df
             else:
                 self.data.append(df)
+
+    def __add_special_chars_to_data(self):
+        '''
+        This adds the sos and eos characters to each string.
+        '''
+        if self.data is None:
+            raise ValueError('Please build dataset first')
+        self.data.content = self.data.content.apply(prefix_suffix_line_with_chars,
+                                                    args=(self.sos_char,
+                                                          self.eos_char,))
 
     def set_train_split(self, ratio=0.8):
         self.train, self.validation = train_test_split(self.data,
@@ -57,7 +78,7 @@ class TweetHandler(object):
                                       args=(length, self.pad_char, )).values.tolist()
 
         # One hot encode the strings.
-        out = torch.stack([self.line_to_tensor(s) for s in just_str]).squeeze(2)
+        out = torch.stack([self.line_to_tensor(s) for s in just_str])
         print(out.size())
 
 
