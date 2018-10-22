@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import torch
+import re
 from sklearn.model_selection import train_test_split
 
 
@@ -11,15 +12,26 @@ https://stackoverflow.com/questions/11331982/how-to-remove-any-url-within-a-stri
 to remove urls.
 '''
 
-def rand_line_start(string, length, pad_char):
+def rand_line_start(string,
+                    length,
+                    pad_char,
+                    target_offset):
     start = np.random.randint(len(string))
-    temp = string[start: start + length]
-    temp += pad_char * (length - len(temp))
-    return temp
+    input_string = string[start: start + length]
+    input_string += pad_char * (length - len(input_string))
+    target_string = string[start + target_offset:
+                           start + target_offset + length]
+    target_string += pad_char * (length - len(target_string))
+    return pd.Series([input_string, target_string])
 
 def prefix_suffix_line_with_chars(string, prefix_char, suffix_char):
     string = prefix_char + string + suffix_char
     return string
+
+def strip_urls(string):
+    # Crazy regex I found online for matching URLs.
+    regex_str = r'(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»\"\"\'\']))'
+    return re.sub(regex_str, '', string, flags=re.MULTILINE)
 
 class TweetHandler(object):
     def __init__(self, file_list, vocab_file, pad_char='\xe6',
@@ -61,12 +73,18 @@ class TweetHandler(object):
         self.data.content = self.data.content.apply(prefix_suffix_line_with_chars,
                                                     args=(self.sos_char,
                                                           self.eos_char,))
+    def remove_urls(self):
+        if self.data is None:
+            raise ValueError('Please build dataset first')
+        self.data.content = self.data.content.apply(strip_urls)
 
     def set_train_split(self, ratio=0.8):
         self.train, self.validation = train_test_split(self.data,
                                                        test_size=1 - ratio)
 
     def get_N_samples_and_targets(self, N, length, offset, train=True):
+        if self.train is None:
+            raise ValueError('Please set train val split first.')
         if train:
             data = self.train
         else:
@@ -74,12 +92,19 @@ class TweetHandler(object):
         sub = data.sample(N)
 
         # Get just the padded strings from the df.
-        just_str = sub.content.apply(rand_line_start,
-                                      args=(length, self.pad_char, )).values.tolist()
+        out = sub.content.apply(rand_line_start,
+                                      args=(length,
+                                            self.pad_char,
+                                            offset)).values
+
+        inputs = np.array([list(s) for s in out[:, 0]])
+        targets = np.array([list(s) for s in out[:, 1]])
 
         # One hot encode the strings.
-        out = torch.stack([self.line_to_tensor(s) for s in just_str])
-        print(out.size())
+        inputs = torch.stack([self.line_to_tensor(s) for s in inputs])
+        targets = torch.stack([self.line_to_tensor(s) for s in targets])
+
+        return inputs, targets
 
 
     def letter_to_index(self, letter):

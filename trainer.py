@@ -13,9 +13,10 @@ parser.add_argument("-v", "--vocab", type=str,
 args = parser.parse_args()
 input_dir = args.data
 vocab_file = args.vocab
-files = [os.path.join(input_dir, f) for f in os.listdir(input_dir)]
+files = [os.path.join(input_dir, f) for f in os.listdir(input_dir)
+         if f.endswith('.csv')]
 
 TH = TweetHandler(files, vocab_file)
 TH.set_train_split()
-TH.get_N_samples_and_targets(10, 5, 0)
-print('\xf9' in TH.vocab)
+TH.get_N_samples_and_targets(10, 5, 2)
+TH.remove_urls()
