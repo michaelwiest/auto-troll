@@ -95,8 +95,8 @@ class TweetHandler(object):
         targets = np.array([list(s) for s in out[:, 1]])
 
         # One hot encode the strings.
-        inputs = torch.stack([self.line_to_tensor(s) for s in inputs])
-        targets = torch.stack([self.line_to_tensor(s) for s in targets])
+        inputs = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
+        targets = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
 
         return inputs, targets
 

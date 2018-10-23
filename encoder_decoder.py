@@ -98,16 +98,19 @@ class EncoderDecoder(nn.Module):
         # data is shape: sequence_size x batch x num_strains
         num_predictions = input_data.size(0)
 
-        _, self.hidden = self.encoder(input_data, self.hidden)
+        id = input_data.contiguous().view(-1, self.batch_size, 1)
+        print(id.size())
+        _, self.hidden = self.encoder(id, self.hidden)
 
 
         forward_hidden = self.hidden
         backward_hidden = self.hidden
 
         # Get the last input example.
-        forward_inp = d[-1, :, :].unsqueeze(0)
-        backward_inp = d[-1, :, :].unsqueeze(0)
+        forward_inp = input_data[:, -1, :].contiguous().view(-1, self.batch_size, 1)
+        backward_inp = input_data[:, -1, :].contiguous().view(-1, self.batch_size, 1)
 
+        print(forward_inp.size())
         for i in range(num_predictions):
 
             forward, forward_hidden = self.decoder_forward(forward_inp,
@@ -269,11 +272,11 @@ class EncoderDecoder(nn.Module):
 
 
         # Get some initial losses.
-        losses = self.get_intermediate_losses(loss_function, slice_len,
-                                              teacher_force_frac)
-
-        self.loss_tensor = None
-        self.__print_and_log_losses(losses, save_params, instantiate=True)
+        # losses = self.get_intermediate_losses(loss_function, slice_len,
+        #                                       teacher_force_frac)
+        #
+        # self.loss_tensor = None
+        # self.__print_and_log_losses(losses, save_params, instantiate=True)
 
         for epoch in range(epochs):
             iterate = 0
