@@ -6,12 +6,6 @@ from sklearn.model_selection import train_test_split
 
 
 
-'''
-May want to implement this:
-https://stackoverflow.com/questions/11331982/how-to-remove-any-url-within-a-string-in-python
-to remove urls.
-'''
-
 def rand_line_start(string,
                     length,
                     pad_char,
@@ -29,7 +23,7 @@ def prefix_suffix_line_with_chars(string, prefix_char, suffix_char):
     return string
 
 def strip_urls(string):
-    # Crazy regex I found online for matching URLs.
+    # Crazy regex I found online for matching URLs
     regex_str = r'(?i)\b((?:[a-z][\w-]+:(?:/{1,3}|[a-z0-9%])|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»\"\"\'\']))'
     return re.sub(regex_str, '', string, flags=re.MULTILINE)
 
