@@ -10,8 +10,6 @@ import random
 import numpy as np
 import sys
 import os
-sys.path.insert(1, os.path.join(sys.path[0], '../..'))
-from helpers.model_helper import *
 import csv
 
 
@@ -60,8 +58,8 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, self.tweet_handler.num_strains),
-            # nn.BatchNorm1d(self.tweet_handler.num_strains)
+            nn.Linear(hidden_dim, self.tweet_handler.vocab_size),
+            # nn.BatchNorm1d(self.tweet_handler.vocab_size)
             # nn.ReLU()
         )
         self.after_lstm_backward = nn.Sequential(
@@ -83,8 +81,8 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, self.tweet_handler.num_strains),
-            # nn.BatchNorm1d(self.tweet_handler.num_strains)
+            nn.Linear(hidden_dim, self.tweet_handler.vocab_size),
+            # nn.BatchNorm1d(self.tweet_handler.vocab_size)
             # nn.Tanh()
         )
 
@@ -100,7 +98,7 @@ class EncoderDecoder(nn.Module):
         # data is shape: sequence_size x batch x num_strains
         num_predictions = input_data.size(0)
 
-        _, self.hidden = self.encoder(d, self.hidden)
+        _, self.hidden = self.encoder(input_data, self.hidden)
 
 
         forward_hidden = self.hidden
@@ -157,6 +155,13 @@ class EncoderDecoder(nn.Module):
                                                 self.batch_size,
                                                 self.hidden_dim))
                            )
+    def add_cuda_to_variable(self, tensor, requires_grad=True):
+        tensor = torch.FloatTensor(tensor)
+        if self.use_gpu:
+            return Variable(tensor.cuda(), requires_grad=requires_grad)
+        else:
+            return Variable(tensor, requires_grad=requires_grad)
+
     def get_intermediate_losses(self, loss_function, length,
                                 teacher_force_frac,
                                 num_batches=10):
@@ -184,11 +189,11 @@ class EncoderDecoder(nn.Module):
                 #   from: batch x num_strains x sequence_size
                 #   to: sequence_size x batch x num_strains
 
-                data = add_cuda_to_variable(data, self.use_gpu).transpose(1, 2).transpose(0, 1)
-                forward_targets = add_cuda_to_variable(forward_targets, self.use_gpu,
-                                                       requires_grad=False)
-                backward_targets = add_cuda_to_variable(backward_targets, self.use_gpu,
-                                                        requires_grad=False)
+                data = self.add_cuda_to_variable(data).transpose(1, 2).transpose(0, 1)
+                forward_targets = self.add_cuda_to_variable(forward_targets,
+                                                            requires_grad=False)
+                backward_targets = self.add_cuda_to_variable(backward_targets,
+                                                            requires_grad=False)
                 self.zero_grad()
 
                 # Also, we need to clear out the hidden state of the LSTM,
@@ -281,9 +286,10 @@ class EncoderDecoder(nn.Module):
 
                 # Select a random sample from the data handler.
                 data, forward_targets = self.tweet_handler.get_N_samples_and_targets(self.batch_size,
-                                                                           slice_len,
-                                                                           slice_offset=slice_len)
-
+                                                                                     length=slice_len,
+                                                                                     offset=slice_len)
+                print(data.size())
+                print(forward_targets.size())
                 # this is the data that the backward decoder will reconstruct
                 backward_targets = np.flip(data, axis=2).copy()
 
@@ -291,10 +297,10 @@ class EncoderDecoder(nn.Module):
                 #   from: batch x num_strains x sequence_size
                 #   to: sequence_size x batch x num_strains
 
-                data = add_cuda_to_variable(data, self.use_gpu).transpose(1, 2).transpose(0, 1)
-                forward_targets = add_cuda_to_variable(forward_targets, self.use_gpu,
+                data = self.add_cuda_to_variable(data).transpose(1, 2).transpose(0, 1)
+                forward_targets = self.add_cuda_to_variable(forward_targets,
                                                        requires_grad=False)
-                backward_targets = add_cuda_to_variable(backward_targets, self.use_gpu,
+                backward_targets = self.add_cuda_to_variable(backward_targets,
                                                         requires_grad=False)
                 self.zero_grad()
 
@@ -361,15 +367,14 @@ class EncoderDecoder(nn.Module):
         predicted = primer
 
         # Prime the model with all the data but the last point.
-        inp = add_cuda_to_variable(predicted[:, :-1],
-                                   self.use_gpu,
-                                   requires_grad=False) \
+        inp = self.add_cuda_to_variable(predicted[:, :-1],
+                                        requires_grad=False) \
             .transpose(0, 2) \
             .transpose(0, 1)[-window_size:, :, :]
         _, _ = self.forward(inp)
         for p in range(predict_len):
 
-            inp = add_cuda_to_variable(predicted[:, -1, :], self.use_gpu).unsqueeze(1)
+            inp = self.add_cuda_to_variable(predicted[:, -1, :]).unsqueeze(1)
             inp = inp.transpose(0, 2).transpose(0, 1)[-window_size:, :, :]
             # Only keep the last predicted value.
             output, _ = self.forward(inp)

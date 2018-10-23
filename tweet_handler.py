@@ -47,8 +47,8 @@ class TweetHandler(object):
         self.vocab = open(self.vocab_file, 'r').read().splitlines()
         self.vocab += [self.pad_char, self.sos_char, self.eos_char]
         self.vocab_string = ''.join(self.vocab)
-        self.n_letters = len(self.vocab)
-        print('There are {} letters in the vocabulary'.format(self.n_letters))
+        self.vocab_size = len(self.vocab)
+        print('There are {} letters in the vocabulary'.format(self.vocab_size))
 
     def __join_data_inputs(self):
         for i, f in enumerate(self.file_list):
@@ -107,14 +107,14 @@ class TweetHandler(object):
 
     # Just for demonstration, turn a letter into a <1 x n_letters> Tensor
     def letter_to_tensor(self, letter):
-        tensor = torch.zeros(1, self.n_letters)
+        tensor = torch.zeros(1, self.vocab_size)
         tensor[0][self.letter_to_index(letter)] = 1
         return tensor
 
     # Turn a line into a <line_length x 1 x n_letters>,
     # or an array of one-hot letter vectors
     def line_to_tensor(self, line):
-        tensor = torch.zeros(len(line), 1, self.n_letters)
+        tensor = torch.zeros(len(line), 1, self.vocab_size)
         for li, letter in enumerate(line):
             tensor[li][0][self.letter_to_index(letter)] = 1
         return tensor
