@@ -25,34 +25,18 @@ class EncoderDecoder(nn.Module):
     As of now does not have a "dream" function for generating predictions from a
     seeded example.
     '''
-    def __init__(self, hidden_dim, otu_handler,
+    def __init__(self, hidden_dim, tweet_handler,
                  num_lstms,
-                 use_gpu=False,
-                 LSTM_in_size=None):
+                 use_gpu=False):
         super(EncoderDecoder, self).__init__()
         self.hidden_dim = hidden_dim
-        self.otu_handler = otu_handler
-        if LSTM_in_size is None:
-            LSTM_in_size = self.otu_handler.num_strains
+        self.tweet_handler = tweet_handler
+
         self.num_lstms = num_lstms
-        self.encoder = nn.LSTM(LSTM_in_size, hidden_dim, self.num_lstms)
-        self.decoder_forward = nn.LSTM(LSTM_in_size, hidden_dim, self.num_lstms)
-        self.decoder_backward = nn.LSTM(LSTM_in_size, hidden_dim, self.num_lstms)
+        self.encoder = nn.LSTM(1, hidden_dim, self.num_lstms)
+        self.decoder_forward = nn.LSTM(1, hidden_dim, self.num_lstms)
+        self.decoder_backward = nn.LSTM(1, hidden_dim, self.num_lstms)
 
-
-        # Compression layers from raw number of inputs to reduced number
-        self.strain_compressor = nn.Sequential(
-            nn.Linear(self.otu_handler.num_strains, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(hidden_dim, LSTM_in_size),
-            # nn.BatchNorm1d(self.otu_handler.num_strains)
-            nn.ReLU()
-        )
 
         # Expansion layers from reduced number to raw number of strains
         self.after_lstm_forward = nn.Sequential(
@@ -76,8 +60,8 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, self.otu_handler.num_strains),
-            # nn.BatchNorm1d(self.otu_handler.num_strains)
+            nn.Linear(hidden_dim, self.tweet_handler.num_strains),
+            # nn.BatchNorm1d(self.tweet_handler.num_strains)
             # nn.ReLU()
         )
         self.after_lstm_backward = nn.Sequential(
@@ -99,8 +83,8 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, self.otu_handler.num_strains),
-            # nn.BatchNorm1d(self.otu_handler.num_strains)
+            nn.Linear(hidden_dim, self.tweet_handler.num_strains),
+            # nn.BatchNorm1d(self.tweet_handler.num_strains)
             # nn.Tanh()
         )
 
@@ -116,7 +100,6 @@ class EncoderDecoder(nn.Module):
         # data is shape: sequence_size x batch x num_strains
         num_predictions = input_data.size(0)
 
-        d = self.strain_compressor(input_data)
         _, self.hidden = self.encoder(d, self.hidden)
 
 
@@ -174,7 +157,7 @@ class EncoderDecoder(nn.Module):
                                                 self.batch_size,
                                                 self.hidden_dim))
                            )
-    def get_intermediate_losses(self, loss_function, slice_len,
+    def get_intermediate_losses(self, loss_function, length,
                                 teacher_force_frac,
                                 num_batches=10):
         '''
@@ -182,22 +165,19 @@ class EncoderDecoder(nn.Module):
         '''
         self.eval()
 
-        # First get some training loss and then a validation loss.
-        if self.otu_handler.test_data is not None:
-            samples = ['train', 'validation', 'test']
-        else:
-            samples = ['train', 'validation']
+        train = [True, False]
 
-        strain_losses = np.zeros((len(samples), self.otu_handler.num_strains))
+        losses = []
 
-        for i, which_sample in enumerate(samples):
+        for i, is_train in enumerate(train):
 
+            loss = 0
             for b in range(num_batches):
                 # Select a random sample from the data handler.
-                data, forward_targets = self.otu_handler.get_N_samples_and_targets(self.batch_size,
-                                                                                   slice_len,
-                                                                                   slice_offset=slice_len,
-                                                                                   which_data=which_sample)
+                data, forward_targets = self.tweet_handler.get_N_samples_and_targets(self.batch_size,
+                                                                                   length=length,
+                                                                                   offset=length,
+                                                                                   train=is_train)
                 # this is the data that the backward decoder will reconstruct
                 backward_targets = np.flip(data, axis=2).copy()
                 # Transpose
@@ -226,20 +206,15 @@ class EncoderDecoder(nn.Module):
 
                 # We want to get the loss on a per-strain basis.
 
-                if self.use_gpu:
-                    forward_preds = forward_preds.detach().cpu()
-                    backward_preds = backward_preds.detach().cpu()
-                    forward_targets = forward_targets.detach().cpu()
-                    backward_targets = backward_targets.detach().cpu()
-                for strain in range(self.otu_handler.num_strains):
-                    # Get the loss associated with this validation data.
-                    strain_losses[i, strain] += loss_function(forward_preds[:, strain, :],
-                                                              forward_targets[:, strain, :])
-                    strain_losses[i, strain] += loss_function(backward_preds[:, strain, :],
-                                                              backward_targets[:, strain, :])
+                floss = loss_function(forward_preds, forward_targets)
+                bloss = loss_function(backward_preds, backward_targets)
+                loss += floss + bloss
 
-        strain_losses /= (2 * num_batches * self.otu_handler.num_strains)
-        return strain_losses
+        if self.use_gpu:
+            losses.append(loss.data.cpu().numpy().item() / (2 * num_batches))
+        else:
+            losses.append(loss.data.numpy().item() / (2 * num_batches))
+        return losses
 
     def __print_and_log_losses(self, new_losses, save_params,
                                instantiate=False # Overwrite tensor if first time.
@@ -305,7 +280,7 @@ class EncoderDecoder(nn.Module):
                 self.train() # Put the network in training mode.
 
                 # Select a random sample from the data handler.
-                data, forward_targets = self.otu_handler.get_N_samples_and_targets(self.batch_size,
+                data, forward_targets = self.tweet_handler.get_N_samples_and_targets(self.batch_size,
                                                                            slice_len,
                                                                            slice_offset=slice_len)
 
@@ -363,7 +338,7 @@ class EncoderDecoder(nn.Module):
                         # Make sure that the slice doesn't get longer than the
                         # amount of data we can feed to it. Could handle this with
                         # padding characters.
-                        slice_len = min(self.otu_handler.min_len - 1, int(slice_len))
+                        slice_len = min(self.tweet_handler.min_len - 1, int(slice_len))
                         print('Increased slice length to: {}'.format(slice_len))
 
             # Save the model and logging information.
