@@ -58,7 +58,7 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, self.tweet_handler.vocab_size),
+            nn.Linear(hidden_dim, 1),
             # nn.BatchNorm1d(self.tweet_handler.vocab_size)
             # nn.ReLU()
         )
@@ -81,7 +81,7 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, self.tweet_handler.vocab_size),
+            nn.Linear(hidden_dim, 1),
             # nn.BatchNorm1d(self.tweet_handler.vocab_size)
             # nn.Tanh()
         )
@@ -107,9 +107,11 @@ class EncoderDecoder(nn.Module):
         backward_hidden = self.hidden
 
         # Get the last input example.
-        forward_inp = input_data[:, -1, :].contiguous().view(-1, self.batch_size, 1)
-        backward_inp = input_data[:, -1, :].contiguous().view(-1, self.batch_size, 1)
-
+        print(input_data.size())
+        print(input_data[:, :, -1].size())
+        forward_inp = input_data[:, :, -1].contiguous().view(-1, self.batch_size, 1)
+        backward_inp = input_data[:, :, -1].contiguous().view(-1, self.batch_size, 1)
+        print('$$')
         print(forward_inp.size())
         for i in range(num_predictions):
 
@@ -117,9 +119,11 @@ class EncoderDecoder(nn.Module):
                                                            forward_hidden)
             backward, backward_hidden = self.decoder_backward(backward_inp,
                                                               backward_hidden)
+            print(forward.size())
             forward = self.after_lstm_forward(forward)
             backward = self.after_lstm_backward(backward)
-
+            print(forward.size())
+            print('---')
             # Add our prediction to the list of predictions.
             if i == 0:
                 forward_pred = forward
@@ -133,11 +137,11 @@ class EncoderDecoder(nn.Module):
             # If there is no teacher data then use the most recent prediction
             # to make the next prediction. Otherwise use the teacher data.
             if teacher_data is None:
-                forward_inp = self.strain_compressor(forward)
-                backward_inp = self.strain_compressor(backward)
+                forward_inp = forward
+                backward_inp = backward
             else:
-                forward_inp = self.strain_compressor(teacher_data[0][i, :, :].unsqueeze(0))
-                backward_inp = self.strain_compressor(teacher_data[0][i, :, :].unsqueeze(0))
+                forward_inp = teacher_data[0][:, :, i]
+                backward_inp = teacher_data[0][:, :, i]
 
         return forward_pred.transpose(1, 2).transpose(0, 2), backward_pred.transpose(1, 2).transpose(0, 2)
 
@@ -291,8 +295,8 @@ class EncoderDecoder(nn.Module):
                 data, forward_targets = self.tweet_handler.get_N_samples_and_targets(self.batch_size,
                                                                                      length=slice_len,
                                                                                      offset=slice_len)
-                print(data.size())
-                print(forward_targets.size())
+                # print(data.size())
+                # print(forward_targets.size())
                 # this is the data that the backward decoder will reconstruct
                 backward_targets = np.flip(data, axis=2).copy()
 

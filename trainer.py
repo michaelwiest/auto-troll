@@ -21,5 +21,5 @@ TH.set_train_split()
 TH.get_N_samples_and_targets(10, 5, 2)
 TH.remove_urls()
 
-enc = EncoderDecoder(256, TH, 2)
-enc.do_training(10, 50, 50, 0.00005, 500000, 0.5)
+enc = EncoderDecoder(128, TH, 1)
+enc.do_training(10, 25, 10, 0.00005, 500000, 0.5)
