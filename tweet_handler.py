@@ -97,14 +97,14 @@ class TweetHandler(object):
         inputs = np.array([list(s) for s in out[:, 0]])
         targets = np.array([list(s) for s in out[:, 1]])
 
-        inputs = torch.Tensor(self.vec_index_lookup(inputs)).unsqueeze(2)
-        targets = torch.Tensor(self.vec_index_lookup(targets)).unsqueeze(2)
+        inputs_category = torch.Tensor(self.vec_index_lookup(inputs)).unsqueeze(2)
+        targets_category = torch.Tensor(self.vec_index_lookup(targets)).unsqueeze(2)
 
         # # One hot encode the strings.
-        # inputs = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
-        # targets = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
+        inputs_oh = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
+        targets_oh = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
 
-        return inputs, targets
+        return inputs_oh, targets_oh, inputs_category, targets_category
 
 
     def letter_to_index(self, letter):

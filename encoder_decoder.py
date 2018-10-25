@@ -31,11 +31,11 @@ class EncoderDecoder(nn.Module):
         self.tweet_handler = tweet_handler
 
         self.num_lstms = num_lstms
-        self.encoder = nn.LSTM(1,
+        self.encoder = nn.LSTM(self.tweet_handler.vocab_size,
                                hidden_dim, self.num_lstms)
-        self.decoder_forward = nn.LSTM(1,
+        self.decoder_forward = nn.LSTM(self.tweet_handler.vocab_size,
                                        hidden_dim, self.num_lstms)
-        self.decoder_backward = nn.LSTM(1,
+        self.decoder_backward = nn.LSTM(self.tweet_handler.vocab_size,
                                         hidden_dim, self.num_lstms)
 
 
@@ -88,7 +88,7 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(self.tweet_handler.vocab_size)
             # nn.Tanh()
         )
-        self.lin_intermed = nn.Linear(self.hidden_dim, 1)
+        # self.lin_intermed = nn.Linear(self.hidden_dim, 1)
 
         # Non-torch inits.
         self.use_gpu = use_gpu
@@ -107,7 +107,6 @@ class EncoderDecoder(nn.Module):
         num_predictions = input_data.size(0)
 
         id = input_data #.contiguous().view(-1, self.batch_size, 1)
-        # print(id.size())
         _, self.hidden = self.encoder(id, self.hidden)
 
 
@@ -115,11 +114,10 @@ class EncoderDecoder(nn.Module):
         backward_hidden = self.hidden
 
         # Get the last input example.
-        # print(input_data.size())
+
         forward_inp = input_data[-1, ...].unsqueeze(0) #.contiguous().view(-1, self.batch_size, 1)
         backward_inp = input_data[-1, ...].unsqueeze(0) #.contiguous().view(-1, self.batch_size, 1)
-        # print(forward_inp.size())
-        # print('$$')
+
         for i in range(num_predictions):
             # print(forward_inp.size())
             forward, forward_hidden = self.decoder_forward(forward_inp,
@@ -127,12 +125,8 @@ class EncoderDecoder(nn.Module):
             backward, backward_hidden = self.decoder_backward(backward_inp,
                                                               backward_hidden)
             # print(forward.size())
-            # forward = self.after_lstm_forward(forward)
-            # backward = self.after_lstm_backward(backward)
-            # forward = self.lin_intermed(forward)
-            # backward = self.lin_intermed(backward)
-            # print(forward.size())
-            # print('---')
+            forward = self.after_lstm_forward(forward)
+            backward = self.after_lstm_backward(backward)
             # Add our prediction to the list of predictions.
             if i == 0:
                 forward_pred = forward
@@ -151,8 +145,7 @@ class EncoderDecoder(nn.Module):
             else:
                 forward_inp = tf[i, ...].unsqueeze(0)
                 backward_inp = tb[i, ...].unsqueeze(0)
-        print(forward_pred.size())
-        forward_pred = self.after_lstm_forward(forward_pred)
+
         return forward_pred.transpose(1, 2).transpose(0, 2), backward_pred.transpose(1, 2).transpose(0, 2)
 
     def __init_hidden(self):
@@ -196,20 +189,27 @@ class EncoderDecoder(nn.Module):
             loss = 0
             for b in range(num_batches):
                 # Select a random sample from the data handler.
-                data, forward_targets = self.tweet_handler.get_N_samples_and_targets(self.batch_size,
-                                                                                   length=length,
-                                                                                   offset=length,
-                                                                                   train=is_train)
+                data = self.tweet_handler.get_N_samples_and_targets(self.batch_size,
+                                                                   length=length,
+                                                                   offset=length,
+                                                                   train=True)
+                inputs_oh, targets_oh, inputs_cat, targets_cat = data
+
                 # this is the data that the backward decoder will reconstruct
-                backward_targets = np.flip(data, axis=2).copy()
+                backward_targets_cat = np.flip(inputs_cat, axis=2).copy()
+                backward_targets_oh = np.flip(inputs_oh, axis=2).copy()
                 # Transpose
                 #   from: batch x num_strains x sequence_size
                 #   to: sequence_size x batch x num_strains
 
-                data = self.add_cuda_to_variable(data).transpose(1, 2).transpose(0, 1)
-                forward_targets = self.add_cuda_to_variable(forward_targets,
+                inputs_oh = self.add_cuda_to_variable(inputs_oh).transpose(1, 2).transpose(0, 1)
+                targets_cat = self.add_cuda_to_variable(targets_cat,
+                                                        requires_grad=False).long()
+                targets_oh = self.add_cuda_to_variable(targets_oh,
                                                             requires_grad=False)
-                backward_targets = self.add_cuda_to_variable(backward_targets,
+                backward_targets_cat = self.add_cuda_to_variable(backward_targets_cat,
+                                                            requires_grad=False).long()
+                backward_targets_oh = self.add_cuda_to_variable(backward_targets_oh,
                                                             requires_grad=False)
                 self.zero_grad()
 
@@ -218,24 +218,32 @@ class EncoderDecoder(nn.Module):
                 self.__init_hidden()
 
                 if np.random.rand() < teacher_force_frac:
-                    tf = (forward_targets.transpose(1, 2).transpose(0, 1),
-                          backward_targets.transpose(1, 2).transpose(0, 1))
+                    tf = (targets_oh.transpose(1, 2).transpose(0, 1),
+                          backward_targets_oh.transpose(1, 2).transpose(0, 1))
                 else:
                     tf = None
                 # Do a forward pass of the model.
-                forward_preds, backward_preds = self.forward(data,
+                forward_preds, backward_preds = self.forward(inputs_oh,
                                                              teacher_data=tf)
 
-                # We want to get the loss on a per-strain basis.
-
-                floss = loss_function(forward_preds, forward_targets)
-                bloss = loss_function(backward_preds, backward_targets)
+                # For this round set our loss to zero and then compare
+                # accumulated losses for all of the batch examples.
+                # Finally step with the optimizer.
+                forward_preds = forward_preds.transpose(1, 2)
+                backward_preds = backward_preds.transpose(1, 2)
+                floss = 0
+                bloss = 0
+                for b in range(length):
+                    # print(forward_preds[:, b, :].size())
+                    # print(targets_cat[:, b, :].squeeze(1).size())
+                    floss += loss_function(forward_preds[:, b, :], targets_cat[:, b, :].squeeze(1))
+                    bloss += loss_function(backward_preds[:, b, :], backward_targets_cat[:, b, :].squeeze(1))
                 loss += floss + bloss
 
-        if self.use_gpu:
-            losses.append(loss.data.cpu().numpy().item() / (2 * num_batches))
-        else:
-            losses.append(loss.data.numpy().item() / (2 * num_batches))
+            if self.use_gpu:
+                losses.append(loss.data.cpu().numpy().item() / (2 * num_batches))
+            else:
+                losses.append(loss.data.numpy().item() / (2 * num_batches))
         return losses
 
     def __print_and_log_losses(self, new_losses, save_params,
@@ -245,13 +253,13 @@ class EncoderDecoder(nn.Module):
         This function joins the newest loss values to the ongoing tensor.
         It also prints out the data in a readable fashion.
         '''
-        if instantiate:
-            self.loss_tensor = np.expand_dims(new_losses, axis=-1)
-        else:
-            new_losses = np.expand_dims(new_losses, axis=-1)
-            self.loss_tensor = np.concatenate((self.loss_tensor, new_losses),
+        # if instantiate:
+        #     self.loss_tensor = np.expand_dims(new_losses, axis=-1)
+        # else:
+        #     new_losses = np.expand_dims(new_losses, axis=-1)
+        #     self.loss_tensor = np.concatenate((self.loss_tensor, new_losses),
                                               axis=-1)
-
+        # print(self.loss_tensor.shape)
         to_print = self.loss_tensor[:, :, -1].sum(axis=1).tolist()
         print_str = ['Train loss: {}', '  Val loss: {}',
                      ' Test loss: {}']
@@ -263,7 +271,7 @@ class EncoderDecoder(nn.Module):
 
 
     def do_training(self,
-                    slice_len,
+                    length,
                     batch_size,
                     epochs,
                     lr,
@@ -278,7 +286,7 @@ class EncoderDecoder(nn.Module):
         if self.use_gpu:
             self.cuda()
 
-        loss_function = nn.MSELoss()
+        loss_function = nn.CrossEntropyLoss()
         # TODO: Try Adagrad & RMSProp
         optimizer = optim.Adam(self.parameters(), lr=lr)
 
@@ -286,11 +294,11 @@ class EncoderDecoder(nn.Module):
 
 
         # Get some initial losses.
-        # losses = self.get_intermediate_losses(loss_function, slice_len,
-        #                                       teacher_force_frac)
-        #
-        # self.loss_tensor = None
-        # self.__print_and_log_losses(losses, save_params, instantiate=True)
+        losses = self.get_intermediate_losses(loss_function, length,
+                                              teacher_force_frac)
+        print(losses)
+        self.loss_tensor = None
+        self.__print_and_log_losses(losses, save_params, instantiate=True)
 
         for epoch in range(epochs):
             iterate = 0
@@ -302,23 +310,28 @@ class EncoderDecoder(nn.Module):
                 self.train() # Put the network in training mode.
 
                 # Select a random sample from the data handler.
-                data, forward_targets = self.tweet_handler.get_N_samples_and_targets(self.batch_size,
-                                                                                     length=slice_len,
-                                                                                     offset=slice_len)
-                # print(data.size())
-                # print(forward_targets.size())
-                # this is the data that the backward decoder will reconstruct
-                backward_targets = np.flip(data, axis=2).copy()
+                data = self.tweet_handler.get_N_samples_and_targets(self.batch_size,
+                                                                   length=length,
+                                                                   offset=length,
+                                                                   train=True)
+                inputs_oh, targets_oh, inputs_cat, targets_cat = data
 
+                # this is the data that the backward decoder will reconstruct
+                backward_targets_cat = np.flip(inputs_cat, axis=2).copy()
+                backward_targets_oh = np.flip(inputs_oh, axis=2).copy()
                 # Transpose
                 #   from: batch x num_strains x sequence_size
                 #   to: sequence_size x batch x num_strains
 
-                data = self.add_cuda_to_variable(data).transpose(1, 2).transpose(0, 1)
-                forward_targets = self.add_cuda_to_variable(forward_targets,
-                                                       requires_grad=False)
-                backward_targets = self.add_cuda_to_variable(backward_targets,
-                                                        requires_grad=False)
+                inputs_oh = self.add_cuda_to_variable(inputs_oh).transpose(1, 2).transpose(0, 1)
+                targets_cat = self.add_cuda_to_variable(targets_cat,
+                                                        requires_grad=False).long()
+                targets_oh = self.add_cuda_to_variable(targets_oh,
+                                                            requires_grad=False)
+                backward_targets_cat = self.add_cuda_to_variable(backward_targets_cat,
+                                                            requires_grad=False).long()
+                backward_targets_oh = self.add_cuda_to_variable(backward_targets_oh,
+                                                            requires_grad=False)
                 self.zero_grad()
 
                 # Also, we need to clear out the hidden state of the LSTM,
@@ -326,19 +339,24 @@ class EncoderDecoder(nn.Module):
                 self.__init_hidden()
 
                 if np.random.rand() < teacher_force_frac:
-                    tf = (forward_targets.transpose(1, 2).transpose(0, 1),
-                          backward_targets.transpose(1, 2).transpose(0, 1))
+                    tf = (targets_oh.transpose(1, 2).transpose(0, 1),
+                          backward_targets_oh.transpose(1, 2).transpose(0, 1))
                 else:
                     tf = None
                 # Do a forward pass of the model.
-                forward_preds, backward_preds = self.forward(data,
+                forward_preds, backward_preds = self.forward(inputs_oh,
                                                              teacher_data=tf)
 
                 # For this round set our loss to zero and then compare
                 # accumulated losses for all of the batch examples.
                 # Finally step with the optimizer.
-                floss = loss_function(forward_preds, forward_targets)
-                bloss = loss_function(backward_preds, backward_targets)
+                forward_preds = forward_preds.transpose(1, 2)
+                backward_preds = backward_preds.transpose(1, 2)
+                floss = 0
+                bloss = 0
+                for b in range(length):
+                    floss += loss_function(forward_preds[:, b, :], targets_cat[:, b, :].squeeze(1))
+                    bloss += loss_function(backward_preds[:, b, :], backward_targets_cat[:, b, :].squeeze(1))
                 loss = floss + bloss
                 loss.backward()
                 optimizer.step()
