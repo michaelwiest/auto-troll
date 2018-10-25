@@ -36,8 +36,9 @@ class TweetHandler(object):
         self.file_list = file_list
         self.vocab_file = vocab_file
         self.__join_data_inputs()
-        # self.__add_special_chars_to_data()
+        self.__add_special_chars_to_data()
         self.__build_vocabulary()
+        self.vec_index_lookup = np.vectorize(self.letter_to_index)
 
 
     def __build_vocabulary(self):
@@ -67,6 +68,8 @@ class TweetHandler(object):
         self.data.content = self.data.content.apply(prefix_suffix_line_with_chars,
                                                     args=(self.sos_char,
                                                           self.eos_char,))
+        self.data.content = self.data.content.str.lower()
+
     def remove_urls(self):
         if self.data is None:
             raise ValueError('Please build dataset first')
@@ -94,9 +97,12 @@ class TweetHandler(object):
         inputs = np.array([list(s) for s in out[:, 0]])
         targets = np.array([list(s) for s in out[:, 1]])
 
-        # One hot encode the strings.
-        inputs = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
-        targets = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
+        inputs = torch.Tensor(self.vec_index_lookup(inputs)).unsqueeze(2)
+        targets = torch.Tensor(self.vec_index_lookup(targets)).unsqueeze(2)
+
+        # # One hot encode the strings.
+        # inputs = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
+        # targets = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
 
         return inputs, targets
 

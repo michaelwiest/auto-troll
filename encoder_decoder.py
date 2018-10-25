@@ -31,60 +31,64 @@ class EncoderDecoder(nn.Module):
         self.tweet_handler = tweet_handler
 
         self.num_lstms = num_lstms
-        self.encoder = nn.LSTM(1, hidden_dim, self.num_lstms)
-        self.decoder_forward = nn.LSTM(1, hidden_dim, self.num_lstms)
-        self.decoder_backward = nn.LSTM(1, hidden_dim, self.num_lstms)
+        self.encoder = nn.LSTM(1,
+                               hidden_dim, self.num_lstms)
+        self.decoder_forward = nn.LSTM(1,
+                                       hidden_dim, self.num_lstms)
+        self.decoder_backward = nn.LSTM(1,
+                                        hidden_dim, self.num_lstms)
 
 
         # Expansion layers from reduced number to raw number of strains
         self.after_lstm_forward = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.BatchNorm1d(hidden_dim),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.BatchNorm1d(self.hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.BatchNorm1d(hidden_dim),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.BatchNorm1d(self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.BatchNorm1d(hidden_dim),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.BatchNorm1d(self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, 1),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.BatchNorm1d(self.hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(self.hidden_dim, self.tweet_handler.vocab_size),
             # nn.BatchNorm1d(self.tweet_handler.vocab_size)
             # nn.ReLU()
         )
         self.after_lstm_backward = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.BatchNorm1d(hidden_dim),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.BatchNorm1d(self.hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.BatchNorm1d(hidden_dim),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.BatchNorm1d(hidden_dim),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.BatchNorm1d(self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, hidden_dim),
-            # nn.BatchNorm1d(hidden_dim),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.BatchNorm1d(self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(hidden_dim, 1),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.BatchNorm1d(self.hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(self.hidden_dim, self.tweet_handler.vocab_size),
             # nn.BatchNorm1d(self.tweet_handler.vocab_size)
             # nn.Tanh()
         )
+        self.lin_intermed = nn.Linear(self.hidden_dim, 1)
 
         # Non-torch inits.
         self.use_gpu = use_gpu
@@ -92,14 +96,18 @@ class EncoderDecoder(nn.Module):
 
 
     def forward(self, input_data, teacher_data=None):
+        if teacher_data is not None:
+            tf = teacher_data[0].transpose(0, 2)
+            tb = teacher_data[1].transpose(0, 2)
         # Teacher data should be a tuple of length two where the first value
         # is the data corresponding to the future prediction and the
         # second value is the data corresponding to the reversed input.
         # data is shape: sequence_size x batch x num_strains
+        input_data = input_data.transpose(0, 2)
         num_predictions = input_data.size(0)
 
-        id = input_data.contiguous().view(-1, self.batch_size, 1)
-        print(id.size())
+        id = input_data #.contiguous().view(-1, self.batch_size, 1)
+        # print(id.size())
         _, self.hidden = self.encoder(id, self.hidden)
 
 
@@ -107,23 +115,24 @@ class EncoderDecoder(nn.Module):
         backward_hidden = self.hidden
 
         # Get the last input example.
-        print(input_data.size())
-        print(input_data[:, :, -1].size())
-        forward_inp = input_data[:, :, -1].contiguous().view(-1, self.batch_size, 1)
-        backward_inp = input_data[:, :, -1].contiguous().view(-1, self.batch_size, 1)
-        print('$$')
-        print(forward_inp.size())
+        # print(input_data.size())
+        forward_inp = input_data[-1, ...].unsqueeze(0) #.contiguous().view(-1, self.batch_size, 1)
+        backward_inp = input_data[-1, ...].unsqueeze(0) #.contiguous().view(-1, self.batch_size, 1)
+        # print(forward_inp.size())
+        # print('$$')
         for i in range(num_predictions):
-
+            # print(forward_inp.size())
             forward, forward_hidden = self.decoder_forward(forward_inp,
                                                            forward_hidden)
             backward, backward_hidden = self.decoder_backward(backward_inp,
                                                               backward_hidden)
-            print(forward.size())
-            forward = self.after_lstm_forward(forward)
-            backward = self.after_lstm_backward(backward)
-            print(forward.size())
-            print('---')
+            # print(forward.size())
+            # forward = self.after_lstm_forward(forward)
+            # backward = self.after_lstm_backward(backward)
+            # forward = self.lin_intermed(forward)
+            # backward = self.lin_intermed(backward)
+            # print(forward.size())
+            # print('---')
             # Add our prediction to the list of predictions.
             if i == 0:
                 forward_pred = forward
@@ -140,9 +149,10 @@ class EncoderDecoder(nn.Module):
                 forward_inp = forward
                 backward_inp = backward
             else:
-                forward_inp = teacher_data[0][:, :, i]
-                backward_inp = teacher_data[0][:, :, i]
-
+                forward_inp = tf[i, ...].unsqueeze(0)
+                backward_inp = tb[i, ...].unsqueeze(0)
+        print(forward_pred.size())
+        forward_pred = self.after_lstm_forward(forward_pred)
         return forward_pred.transpose(1, 2).transpose(0, 2), backward_pred.transpose(1, 2).transpose(0, 2)
 
     def __init_hidden(self):
