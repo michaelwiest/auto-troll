@@ -193,7 +193,7 @@ class EncoderDecoder(nn.Module):
                                                                    length=length,
                                                                    offset=length,
                                                                    train=True)
-                inputs_oh, targets_oh, inputs_cat, targets_cat, targets_char = data
+                inputs_oh, targets_oh, inputs_cat, targets_cat = data
 
                 # this is the data that the backward decoder will reconstruct
                 backward_targets_cat = np.flip(inputs_cat, axis=2).copy()
@@ -234,15 +234,8 @@ class EncoderDecoder(nn.Module):
                 floss = 0
                 bloss = 0
                 for b in range(length):
-                    try:
-                        floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1))
-                        bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1))
-                    except:
-                        e = sys.exc_info()[0]
-                        print(e)
-                        print('In eval')
-                        print(forward_preds[b, ...].size())
-                        print(targets_cat[b, ...].squeeze(1).size())
+                    floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1))
+                    bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1))
                 loss += floss + bloss
 
             if self.use_gpu:
@@ -319,7 +312,7 @@ class EncoderDecoder(nn.Module):
                                                                    length=length,
                                                                    offset=length,
                                                                    train=True)
-                inputs_oh, targets_oh, inputs_cat, targets_cat, targets_char = data
+                inputs_oh, targets_oh, inputs_cat, targets_cat = data
 
                 # this is the data that the backward decoder will reconstruct
                 backward_targets_cat = np.flip(inputs_cat, axis=2).copy()
@@ -360,15 +353,8 @@ class EncoderDecoder(nn.Module):
                 floss = 0
                 bloss = 0
                 for b in range(self.batch_size):
-                    try:
-                        floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1))
-                        bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1))
-                    except RuntimeError as e:
-                        print('In train')
-                        print(e)
-                        print(targets_char[b, :])
-                        print(forward_preds[b, ...].size())
-                        print(targets_cat[b, ...])
+                    floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1))
+                    bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1))
                 loss = floss + bloss
                 loss.backward()
                 optimizer.step()

@@ -53,7 +53,8 @@ class TweetHandler(object):
         # self.vocab = self.s
         self.vocab += [self.pad_char, self.sos_char, self.eos_char, '\x85',
                        '\x80']
-        self.vocab += list((set(self.s) - set(self.vocab)))
+        # This really shouldn't need to be here but for some reason it's needed
+        self.vocab += list((set(self.additional_chars) - set(self.vocab)))
 
         self.vocab_size = len(self.vocab)
         print('There are {} letters in the vocabulary'.format(self.vocab_size))
@@ -65,9 +66,7 @@ class TweetHandler(object):
                 self.data = df
             else:
                 self.data.append(df, ignore_index=True)
-        self.s = list(set(self.data.content.str.cat()))
-        # print('$$')
-        # print(len(set(self.s)))
+        self.additional_chars = list(set(self.data.content.str.cat()))
 
 
     def __add_special_chars_to_data(self):
@@ -104,21 +103,16 @@ class TweetHandler(object):
                                       args=(length,
                                             self.pad_char,
                                             offset)).values
-        try:
-            inputs = np.array([list(s) for s in out[:, 0]])
-            targets = np.array([list(s) for s in out[:, 1]])
+        inputs = np.array([list(s) for s in out[:, 0]])
+        targets = np.array([list(s) for s in out[:, 1]])
 
-            inputs_category = torch.Tensor(self.vec_index_lookup(inputs)).unsqueeze(2)
-            targets_category = torch.Tensor(self.vec_index_lookup(targets)).unsqueeze(2)
-            # # One hot encode the strings.
-            inputs_oh = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
-            targets_oh = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
-        except ValueError as e:
-            print(out)
-            print(e)
-            print(inputs)
-            print(targets)
-        return inputs_oh, targets_oh, inputs_category, targets_category, targets
+        inputs_category = torch.Tensor(self.vec_index_lookup(inputs)).unsqueeze(2)
+        targets_category = torch.Tensor(self.vec_index_lookup(targets)).unsqueeze(2)
+        # # One hot encode the strings.
+        inputs_oh = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
+        targets_oh = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
+
+        return inputs_oh, targets_oh, inputs_category, targets_category
 
 
     def letter_to_index(self, letter):
