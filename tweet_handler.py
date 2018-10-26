@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 import torch
+import io
 import re
 from sklearn.model_selection import train_test_split
 
@@ -42,23 +43,32 @@ class TweetHandler(object):
         self.vec_index_lookup = np.vectorize(self.letter_to_index)
 
 
+
+
     def __build_vocabulary(self):
         '''
         Open the vocabulary file and set the pertinent fields.
         '''
-        self.vocab = open(self.vocab_file, 'r', encoding="utf-8").read().splitlines()
-        self.vocab += [self.pad_char, self.sos_char, self.eos_char, '\x85']
-        self.vocab_string = ''.join(self.vocab)
+        self.vocab = open(self.vocab_file, 'r').read().splitlines()
+        # self.vocab = self.s
+        self.vocab += [self.pad_char, self.sos_char, self.eos_char, '\x85',
+                       '\x80']
+        self.vocab += list((set(self.s) - set(self.vocab)))
+
         self.vocab_size = len(self.vocab)
         print('There are {} letters in the vocabulary'.format(self.vocab_size))
 
     def __join_data_inputs(self):
         for i, f in enumerate(self.file_list):
-            df = pd.read_csv(f)
+            df = pd.read_csv(f, header=0, usecols=['content'])
             if i == 0:
                 self.data = df
             else:
-                self.data.append(df)
+                self.data.append(df, ignore_index=True)
+        self.s = list(set(self.data.content.str.cat()))
+        # print('$$')
+        # print(len(set(self.s)))
+
 
     def __add_special_chars_to_data(self):
         '''
@@ -94,23 +104,26 @@ class TweetHandler(object):
                                       args=(length,
                                             self.pad_char,
                                             offset)).values
+        try:
+            inputs = np.array([list(s) for s in out[:, 0]])
+            targets = np.array([list(s) for s in out[:, 1]])
 
-        inputs = np.array([list(s) for s in out[:, 0]])
-        targets = np.array([list(s) for s in out[:, 1]])
-
-        inputs_category = torch.Tensor(self.vec_index_lookup(inputs)).unsqueeze(2)
-        targets_category = torch.Tensor(self.vec_index_lookup(targets)).unsqueeze(2)
-
-        # # One hot encode the strings.
-        inputs_oh = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
-        targets_oh = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
-
+            inputs_category = torch.Tensor(self.vec_index_lookup(inputs)).unsqueeze(2)
+            targets_category = torch.Tensor(self.vec_index_lookup(targets)).unsqueeze(2)
+            # # One hot encode the strings.
+            inputs_oh = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
+            targets_oh = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
+        except ValueError as e:
+            print(out)
+            print(e)
+            print(inputs)
+            print(targets)
         return inputs_oh, targets_oh, inputs_category, targets_category, targets
 
 
     def letter_to_index(self, letter):
-        letter = letter.lower()
-        return self.vocab_string.find(letter)
+        letter = letter
+        return self.vocab.index(letter)
 
     # Just for demonstration, turn a letter into a <1 x n_letters> Tensor
     def letter_to_tensor(self, letter):

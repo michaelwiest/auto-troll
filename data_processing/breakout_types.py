@@ -15,6 +15,6 @@ for type in types:
     if not os.path.isdir(outdir):
         os.makedirs(outdir)
     for i, f in enumerate(files):
-        df = pd.read_csv(f)
+        df = pd.read_csv(f, encoding='utf-8')
         sub = df.loc[df.account_type == type]
         sub.to_csv(os.path.join(outdir, type + '_' + os.path.basename(f)))
