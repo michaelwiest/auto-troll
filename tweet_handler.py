@@ -51,8 +51,8 @@ class TweetHandler(object):
         '''
         self.vocab = open(self.vocab_file, 'r').read().splitlines()
         # self.vocab = self.s
-        self.vocab += [self.pad_char, self.sos_char, self.eos_char, '\x85',
-                       '\x80']
+        self.vocab += [self.pad_char, self.sos_char, self.eos_char]
+        print(len(self.vocab))
         # This really shouldn't need to be here but for some reason it's needed
         self.vocab += list((set(self.additional_chars) - set(self.vocab)))
 
