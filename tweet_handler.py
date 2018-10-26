@@ -45,7 +45,7 @@ class TweetHandler(object):
         '''
         Open the vocabulary file and set the pertinent fields.
         '''
-        self.vocab = open(self.vocab_file, 'r').read().splitlines()
+        self.vocab = open(self.vocab_file, 'r', encoding="utf-8").read().splitlines()
         self.vocab += [self.pad_char, self.sos_char, self.eos_char, '\x85']
         self.vocab_string = ''.join(self.vocab)
         self.vocab_size = len(self.vocab)
