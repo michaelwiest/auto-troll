@@ -193,7 +193,7 @@ class EncoderDecoder(nn.Module):
                                                                    length=length,
                                                                    offset=length,
                                                                    train=True)
-                inputs_oh, targets_oh, inputs_cat, targets_cat = data
+                inputs_oh, targets_oh, inputs_cat, targets_cat, targets_char = data
 
                 # this is the data that the backward decoder will reconstruct
                 backward_targets_cat = np.flip(inputs_cat, axis=2).copy()
@@ -234,10 +234,15 @@ class EncoderDecoder(nn.Module):
                 floss = 0
                 bloss = 0
                 for b in range(length):
-                    # print(forward_preds[:, b, :].size())
-                    # print(targets_cat[:, b, :].squeeze(1).size())
-                    floss += loss_function(forward_preds[:, b, :], targets_cat[:, b, :].squeeze(1))
-                    bloss += loss_function(backward_preds[:, b, :], backward_targets_cat[:, b, :].squeeze(1))
+                    try:
+                        floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1))
+                        bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1))
+                    except:
+                        e = sys.exc_info()[0]
+                        print(e)
+                        print('In eval')
+                        print(forward_preds[b, ...].size())
+                        print(targets_cat[b, ...].squeeze(1).size())
                 loss += floss + bloss
 
             if self.use_gpu:
@@ -246,28 +251,28 @@ class EncoderDecoder(nn.Module):
                 losses.append(loss.data.numpy().item() / (2 * num_batches))
         return losses
 
-    def __print_and_log_losses(self, new_losses, save_params,
-                               instantiate=False # Overwrite tensor if first time.
-                               ):
-        '''
-        This function joins the newest loss values to the ongoing tensor.
-        It also prints out the data in a readable fashion.
-        '''
-        # if instantiate:
-        #     self.loss_tensor = np.expand_dims(new_losses, axis=-1)
-        # else:
-        #     new_losses = np.expand_dims(new_losses, axis=-1)
-        #     self.loss_tensor = np.concatenate((self.loss_tensor, new_losses),
-                                              axis=-1)
-        # print(self.loss_tensor.shape)
-        to_print = self.loss_tensor[:, :, -1].sum(axis=1).tolist()
-        print_str = ['Train loss: {}', '  Val loss: {}',
-                     ' Test loss: {}']
-        for i, tp in enumerate(to_print):
-            print(print_str[i].format(tp))
+    def __print_and_log_losses(self, new_losses, save_params):
+        train_l = new_losses[0]
+        val_l = new_losses[1]
+        self.train_loss_vec.append(train_l)
+        self.val_loss_vec.append(val_l)
+        print('Train loss: {}'.format(train_l))
+        print('  Val loss: {}'.format(val_l))
+
+        if len(new_losses) == 3:
+            test_l = new_losses[2]
+            self.test_loss_vec.append(test_l)
+            print(' Test loss: {}'.format(test_l))
 
         if save_params is not None:
-            np.save(save_params[1], self.loss_tensor)
+            with open(save_params[1], 'w+') as csvfile:
+                writer = csv.writer(csvfile, delimiter=',', quoting=csv.QUOTE_MINIMAL)
+                writer.writerow(self.train_loss_vec)
+                writer.writerow(self.val_loss_vec)
+                if len(new_losses) == 3:
+                    writer.writerow(self.test_loss_vec)
+
+
 
 
     def do_training(self,
@@ -291,14 +296,14 @@ class EncoderDecoder(nn.Module):
         optimizer = optim.Adam(self.parameters(), lr=lr)
 
         # For logging the data for plotting
-
+        self.train_loss_vec = []
+        self.val_loss_vec = []
 
         # Get some initial losses.
         losses = self.get_intermediate_losses(loss_function, length,
                                               teacher_force_frac)
-        print(losses)
-        self.loss_tensor = None
-        self.__print_and_log_losses(losses, save_params, instantiate=True)
+
+        self.__print_and_log_losses(losses, save_params)
 
         for epoch in range(epochs):
             iterate = 0
@@ -314,7 +319,7 @@ class EncoderDecoder(nn.Module):
                                                                    length=length,
                                                                    offset=length,
                                                                    train=True)
-                inputs_oh, targets_oh, inputs_cat, targets_cat = data
+                inputs_oh, targets_oh, inputs_cat, targets_cat, targets_char = data
 
                 # this is the data that the backward decoder will reconstruct
                 backward_targets_cat = np.flip(inputs_cat, axis=2).copy()
@@ -354,9 +359,16 @@ class EncoderDecoder(nn.Module):
                 backward_preds = backward_preds.transpose(1, 2)
                 floss = 0
                 bloss = 0
-                for b in range(length):
-                    floss += loss_function(forward_preds[:, b, :], targets_cat[:, b, :].squeeze(1))
-                    bloss += loss_function(backward_preds[:, b, :], backward_targets_cat[:, b, :].squeeze(1))
+                for b in range(self.batch_size):
+                    try:
+                        floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1))
+                        bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1))
+                    except RuntimeError as e:
+                        print('In train')
+                        print(e)
+                        print(targets_char[b, :])
+                        print(forward_preds[b, ...].size())
+                        print(targets_cat[b, ...])
                 loss = floss + bloss
                 loss.backward()
                 optimizer.step()
@@ -366,7 +378,7 @@ class EncoderDecoder(nn.Module):
 
             # Get some train and val losses. These can be used for early
             # stopping later on.
-            losses = self.get_intermediate_losses(loss_function, slice_len,
+            losses = self.get_intermediate_losses(loss_function, length,
                                                   teacher_force_frac)
             self.__print_and_log_losses(losses, save_params)
 

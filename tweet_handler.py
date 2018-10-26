@@ -46,7 +46,7 @@ class TweetHandler(object):
         Open the vocabulary file and set the pertinent fields.
         '''
         self.vocab = open(self.vocab_file, 'r').read().splitlines()
-        self.vocab += [self.pad_char, self.sos_char, self.eos_char]
+        self.vocab += [self.pad_char, self.sos_char, self.eos_char, '\x85']
         self.vocab_string = ''.join(self.vocab)
         self.vocab_size = len(self.vocab)
         print('There are {} letters in the vocabulary'.format(self.vocab_size))
@@ -104,7 +104,7 @@ class TweetHandler(object):
         inputs_oh = torch.stack([self.line_to_tensor(s) for s in inputs]).squeeze(2)
         targets_oh = torch.stack([self.line_to_tensor(s) for s in targets]).squeeze(2)
 
-        return inputs_oh, targets_oh, inputs_category, targets_category
+        return inputs_oh, targets_oh, inputs_category, targets_category, targets
 
 
     def letter_to_index(self, letter):
