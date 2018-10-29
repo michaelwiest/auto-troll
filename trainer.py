@@ -1,6 +1,7 @@
 from tweet_handler import TweetHandler
 import os
 import sys
+from params import *
 import argparse
 from encoder_decoder import EncoderDecoder
 
@@ -18,8 +19,20 @@ files = [os.path.join(input_dir, f) for f in os.listdir(input_dir)
 
 TH = TweetHandler(files, vocab_file)
 TH.set_train_split()
-TH.get_N_samples_and_targets(10, 5, 2)
 TH.remove_urls()
 
-enc = EncoderDecoder(128, TH, 1)
-enc.do_training(10, 25, 10, 0.00005, 500000, 0.5)
+if not os.path.isdir(output_dir):
+    os.mkdir(output_dir)
+
+save_params = (os.path.join(output_dir, model_name),
+               os.path.join(output_dir, log_name))
+
+enc = EncoderDecoder(hidden_dim, TH, num_lstms)
+enc.do_training(seq_len,
+                batch_size,
+                num_epochs,
+                learning_rate,
+                samples_per_epoch,
+                teacher_force_frac,
+                slice_incr_frequency=slice_incr_frequency,
+                save_params=save_params)
