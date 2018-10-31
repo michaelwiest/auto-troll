@@ -31,11 +31,11 @@ class EncoderDecoder(nn.Module):
         self.tweet_handler = tweet_handler
 
         self.num_lstms = num_lstms
-        self.encoder = nn.LSTM(self.tweet_handler.vocab_size,
+        self.encoder = nn.LSTM(1,
                                hidden_dim, self.num_lstms)
-        self.decoder_forward = nn.LSTM(self.tweet_handler.vocab_size,
+        self.decoder_forward = nn.LSTM(1,
                                        hidden_dim, self.num_lstms)
-        self.decoder_backward = nn.LSTM(self.tweet_handler.vocab_size,
+        self.decoder_backward = nn.LSTM(1,
                                         hidden_dim, self.num_lstms)
 
 
@@ -61,8 +61,8 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(self.hidden_dim, self.tweet_handler.vocab_size),
-            # nn.BatchNorm1d(self.tweet_handler.vocab_size)
+            nn.Linear(self.hidden_dim, 1),
+            # nn.BatchNorm1d(1)
             # nn.ReLU()
         )
         self.after_lstm_backward = nn.Sequential(
@@ -84,11 +84,28 @@ class EncoderDecoder(nn.Module):
             # nn.BatchNorm1d(self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(self.hidden_dim, self.tweet_handler.vocab_size),
+            nn.Linear(self.hidden_dim, 1),
             # nn.BatchNorm1d(self.tweet_handler.vocab_size)
             # nn.Tanh()
         )
-        # self.lin_intermed = nn.Linear(self.hidden_dim, 1)
+        self.lin_final_forward = nn.Sequential(
+            nn.Linear(1, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.tweet_handler.vocab_size)
+            )
+        self.lin_final_backward = nn.Sequential(
+            nn.Linear(1, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.tweet_handler.vocab_size)
+            )
 
         # Non-torch inits.
         self.use_gpu = use_gpu
@@ -106,25 +123,22 @@ class EncoderDecoder(nn.Module):
         input_data = input_data.transpose(0, 2)
         num_predictions = input_data.size(0)
 
-        id = input_data #.contiguous().view(-1, self.batch_size, 1)
+        id = input_data.transpose(0, 2).transpose(0, 1)
         _, self.hidden = self.encoder(id, self.hidden)
-
 
         forward_hidden = self.hidden
         backward_hidden = self.hidden
 
         # Get the last input example.
 
-        forward_inp = input_data[-1, ...].unsqueeze(0) #.contiguous().view(-1, self.batch_size, 1)
-        backward_inp = input_data[-1, ...].unsqueeze(0) #.contiguous().view(-1, self.batch_size, 1)
-
+        forward_inp = input_data[-1, ...].unsqueeze(0).transpose(0, 2).transpose(0, 1)
+        backward_inp = input_data[-1, ...].unsqueeze(0).transpose(0, 2).transpose(0, 1)
         for i in range(num_predictions):
             # print(forward_inp.size())
             forward, forward_hidden = self.decoder_forward(forward_inp,
                                                            forward_hidden)
             backward, backward_hidden = self.decoder_backward(backward_inp,
                                                               backward_hidden)
-            # print(forward.size())
             forward = self.after_lstm_forward(forward)
             backward = self.after_lstm_backward(backward)
             # Add our prediction to the list of predictions.
@@ -143,9 +157,10 @@ class EncoderDecoder(nn.Module):
                 forward_inp = forward
                 backward_inp = backward
             else:
-                forward_inp = tf[i, ...].unsqueeze(0)
-                backward_inp = tb[i, ...].unsqueeze(0)
-
+                forward_inp = tf[i, ...].unsqueeze(0).transpose(0, 2)
+                backward_inp = tb[i, ...].unsqueeze(0).transpose(0, 2)
+        forward_pred = self.lin_final_forward(forward_pred)
+        backward_pred = self.lin_final_backward(backward_pred)
         return forward_pred.transpose(1, 2).transpose(0, 2), backward_pred.transpose(1, 2).transpose(0, 2)
 
     def __init_hidden(self):
@@ -204,13 +219,15 @@ class EncoderDecoder(nn.Module):
 
                 inputs_oh = self.add_cuda_to_variable(inputs_oh).transpose(1, 2).transpose(0, 1)
                 targets_cat = self.add_cuda_to_variable(targets_cat,
-                                                        requires_grad=False).long()
+                                                        requires_grad=False)
                 targets_oh = self.add_cuda_to_variable(targets_oh,
                                                             requires_grad=False)
                 backward_targets_cat = self.add_cuda_to_variable(backward_targets_cat,
-                                                            requires_grad=False).long()
+                                                            requires_grad=False)
                 backward_targets_oh = self.add_cuda_to_variable(backward_targets_oh,
                                                             requires_grad=False)
+                inputs_cat = self.add_cuda_to_variable(inputs_cat,
+                                                       requires_grad=False)
                 self.zero_grad()
 
                 # Also, we need to clear out the hidden state of the LSTM,
@@ -218,12 +235,12 @@ class EncoderDecoder(nn.Module):
                 self.__init_hidden()
 
                 if np.random.rand() < teacher_force_frac:
-                    tf = (targets_oh.transpose(1, 2).transpose(0, 1),
-                          backward_targets_oh.transpose(1, 2).transpose(0, 1))
+                    tf = (inputs_cat.transpose(1, 2).transpose(0, 1),
+                          backward_targets_cat.transpose(1, 2).transpose(0, 1))
                 else:
                     tf = None
                 # Do a forward pass of the model.
-                forward_preds, backward_preds = self.forward(inputs_oh,
+                forward_preds, backward_preds = self.forward(inputs_cat,
                                                              teacher_data=tf)
 
                 # For this round set our loss to zero and then compare
@@ -234,8 +251,8 @@ class EncoderDecoder(nn.Module):
                 floss = 0
                 bloss = 0
                 for b in range(length):
-                    floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1))
-                    bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1))
+                    floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1).long())
+                    bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1).long())
                 loss += floss + bloss
 
             if self.use_gpu:
@@ -323,13 +340,15 @@ class EncoderDecoder(nn.Module):
 
                 inputs_oh = self.add_cuda_to_variable(inputs_oh).transpose(1, 2).transpose(0, 1)
                 targets_cat = self.add_cuda_to_variable(targets_cat,
-                                                        requires_grad=False).long()
+                                                        requires_grad=False)
                 targets_oh = self.add_cuda_to_variable(targets_oh,
                                                             requires_grad=False)
                 backward_targets_cat = self.add_cuda_to_variable(backward_targets_cat,
-                                                            requires_grad=False).long()
+                                                            requires_grad=False)
                 backward_targets_oh = self.add_cuda_to_variable(backward_targets_oh,
                                                             requires_grad=False)
+                inputs_cat = self.add_cuda_to_variable(inputs_cat,
+                                                       requires_grad=True)
                 self.zero_grad()
 
                 # Also, we need to clear out the hidden state of the LSTM,
@@ -337,12 +356,12 @@ class EncoderDecoder(nn.Module):
                 self.__init_hidden()
 
                 if np.random.rand() < teacher_force_frac:
-                    tf = (targets_oh.transpose(1, 2).transpose(0, 1),
-                          backward_targets_oh.transpose(1, 2).transpose(0, 1))
+                    tf = (inputs_cat.transpose(1, 2).transpose(0, 1),
+                          backward_targets_cat.transpose(1, 2).transpose(0, 1))
                 else:
                     tf = None
                 # Do a forward pass of the model.
-                forward_preds, backward_preds = self.forward(inputs_oh,
+                forward_preds, backward_preds = self.forward(inputs_cat,
                                                              teacher_data=tf)
 
                 # For this round set our loss to zero and then compare
@@ -352,9 +371,10 @@ class EncoderDecoder(nn.Module):
                 backward_preds = backward_preds.transpose(1, 2)
                 floss = 0
                 bloss = 0
+
                 for b in range(self.batch_size):
-                    floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1))
-                    bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1))
+                    floss += loss_function(forward_preds[b, ...], targets_cat[b, ...].squeeze(1).long())
+                    bloss += loss_function(backward_preds[b, ...], backward_targets_cat[b, ...].squeeze(1).long())
                 loss = floss + bloss
                 loss.backward()
                 optimizer.step()
@@ -373,7 +393,7 @@ class EncoderDecoder(nn.Module):
             if slice_incr_frequency is not None:
                 if slice_incr_frequency > 0:
                     if epoch != 0 and epoch % slice_incr_frequency == 0:
-                        slice_len += 1
+                        length += 1
                         # Make sure that the slice doesn't get longer than the
                         # amount of data we can feed to it. Could handle this with
                         # padding characters.
