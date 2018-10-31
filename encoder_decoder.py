@@ -394,10 +394,6 @@ class EncoderDecoder(nn.Module):
                 if slice_incr_frequency > 0:
                     if epoch != 0 and epoch % slice_incr_frequency == 0:
                         length += 1
-                        # Make sure that the slice doesn't get longer than the
-                        # amount of data we can feed to it. Could handle this with
-                        # padding characters.
-                        slice_len = min(self.tweet_handler.min_len - 1, int(slice_len))
                         print('Increased slice length to: {}'.format(slice_len))
 
             # Save the model and logging information.
