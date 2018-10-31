@@ -394,7 +394,7 @@ class EncoderDecoder(nn.Module):
                 if slice_incr_frequency > 0:
                     if epoch != 0 and epoch % slice_incr_frequency == 0:
                         length += 1
-                        print('Increased slice length to: {}'.format(slice_len))
+                        print('Increased slice length to: {}'.format(length))
 
             # Save the model and logging information.
             if save_params is not None:
